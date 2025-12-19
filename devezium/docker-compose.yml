@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  debezium:
+    image: quay.io/debezium/connect:2.4
+    container_name: debezium-connector
+    restart: always
+    ports:
+      - "8083:8083"
+    environment:
+      # VM Kafka Cluster IPs (server-3, 4, 5)
+      - BOOTSTRAP_SERVERS=10.100.0.41:29092,10.100.0.42:29092,10.100.0.43:29092
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=my_connect_configs
+      - OFFSET_STORAGE_TOPIC=my_connect_offsets
+      - STATUS_STORAGE_TOPIC=my_connect_statuses
+      - KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      # JSON 데이터만 남기기 위해 Schema 정보 비활성화 (선택 사항)
+      - CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE=false
+      - CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE=false
+      
+      # [중요] 컨테이너 메모리 제한에 맞춰 Java Heap 사이즈 조절 (컨테이너 제한보다 약간 작게 설정)
+      - KAFKA_HEAP_OPTS=-Xms1G -Xmx1536M
+    networks:
+      - default
+    # --- Debezium 메모리 제한 설정 ---
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+# ==========================================
+# Network Configuration
+# ==========================================
+networks:
+  default:
+    name: dataplatform-net
+    external: true
