@@ -1,0 +1,3 @@
+./starrocks/fe/data
+./starrocks/be/data
+./kafka/data
