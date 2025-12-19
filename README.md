@@ -1,230 +1,175 @@
-# 🚀 Real-time Event Data Pipeline (High-Availability Cluster)
+# 🧪 Data Engineering Lab
 
-![Architecture](https://img.shields.io/badge/Architecture-CDC%20%2B%20Stream%20%2B%20OLAP-blue)
-![StarRocks](https://img.shields.io/badge/StarRocks-4.1-orange)
+![StarRocks](https://img.shields.io/badge/StarRocks-4.x-orange)
 ![Kafka](https://img.shields.io/badge/Kafka-KRaft_Mode-black)
 ![Debezium](https://img.shields.io/badge/Debezium-2.4-green)
 
-## 📖 프로젝트 개요
+## 🏗️ 디렉토리 구조 (Directory Structure)
 
-이 프로젝트는 **CDC(Change Data Capture)**와 **OLAP(StarRocks)** 기술을 활용하여 구축한 **고가용성(High-Availability) 실시간 데이터 파이프라인**입니다.
+본 프로젝트는 각 컴포넌트별로 독립된 환경을 제공하여 유지보수와 개별 테스트가 용이하도록 구성되어 있습니다.
 
-단일 장애 지점(SPOF)을 제거하기 위해 Kafka와 StarRocks를 모두 **3-Node 클러스터**로 구성하였으며, 데이터의 생성부터 분석용 DB 적재까지의 지연 시간을 최소화하는 **Real-time Analytics** 환경을 구현하는 것을 목표로 합니다.
-
-### 🎯 핵심 목표
-* **Zero-ETL**: 복잡한 배치 처리 없이 `Routine Load`를 통해 Kafka 데이터를 StarRocks로 직접 적재.
-* **Schema-less CDC**: Debezium의 JSON 변환(Schema 제외)을 통해 유연한 데이터 수집.
-* **Robust Infrastructure**: 고정 IP 기반의 Docker Network와 클러스터링을 통한 안정성 확보.
+```bash
+.
+├── create_network.sh        # 공통 브릿지 네트워크 생성 스크립트
+├── kafka/                   # Kafka Cluster (KRaft Mode, 3 Nodes)
+│   └── docker-compose.yml
+├── mariadb/                 # Source DB & Data Generator
+│   ├── docker-compose.yml
+│   ├── gen_data.py          # 이커머스 트래픽 생성기
+│   ├── mariadb/             # DB 설정 및 초기화 SQL
+│   │   ├── conf.d/
+│   │   └── init/
+│   └── venv/                # Python 가상환경
+├── devezium/                # CDC 엔진 (Debezium Connect)
+│   ├── docker-compose.yml
+│   └── register_connector.sh # 커넥터 등록 스크립트
+├── starrocks/               # StarRocks (OLAP Engine)
+│   ├── fe/                  # Front-End 클러스터
+│   │   └── docker-compose.yml
+│   └── be/                  # Back-End 클러스터
+│       └── docker-compose.yml
+└── README.md
+```
 
 ---
 
-## 🏗️ 시스템 아키텍처 (Architecture)
+## 🚀 Scenario #1: 고가용성 실시간 CDC 파이프라인
+
+### 1. 시나리오 개요: "실시간 이커머스 분석 환경"
+이 시나리오는 **가상의 이커머스 플랫폼**에서 발생하는 트래픽을 처리합니다. `gen_data.py`는 다음과 같은 사용자 행동을 시뮬레이션하며, 모든 변화는 실시간으로 StarRocks에 동기화됩니다.
+
+* **회원 가입 (INSERT)**: 신규 유저가 생성됨 (가중치 20%)
+* **상품 주문 (INSERT)**: 기존 유저가 특정 상품을 주문, `PENDING` 상태로 저장 (가중치 70%)
+* **배송 처리 (UPDATE)**: 주문 상태가 `PENDING`에서 `SHIPPED`로 변경됨
+* **주문 취소 (DELETE)**: 고객의 요청으로 주문 데이터가 삭제됨
+
+
+
+### 2. 아키텍처 (Architecture)
 
 ```mermaid
 graph LR
-    subgraph Data Source
-        Gen[Python Generator] -->|Insert/Update| DB[(MariaDB)]
+    subgraph Source_Layer [OLTP: Business Handling]
+        GEN[Python Traffic Generator]
+        DB_ST[MariaDB Storage]
+        BIN[MySQL Binlog]
+        
+        GEN -- "1. 가입/주문/취소" --> DB_ST
+        DB_ST -- "2. 변경분 기록" --> BIN
     end
 
-    subgraph Streaming Layer [Kafka Cluster KRaft]
-        DB -->|Binlog| CDC[Debezium Connector]
-        CDC -->|JSON Payload| K1[Kafka Node 1]
-        CDC -->|JSON Payload| K2[Kafka Node 2]
-        CDC -->|JSON Payload| K3[Kafka Node 3]
-        K1 -.-> K2 -.-> K3
+    subgraph Ingestion_Layer [CDC: Real-time Capture]
+        DEB[Debezium Connect]
+        BIN -- "3. 로그 스캔" --> DEB
     end
 
-    subgraph OLAP Layer [StarRocks Cluster]
-        K1 & K2 & K3 -->|Routine Load| FE[FE Cluster 3 Nodes]
-        FE --> BE[BE Cluster 3 Nodes]
+    subgraph Streaming_Layer [Kafka: KRAFT]
+        K1[Kafka Broker 1]
+        K2[Kafka Broker 2]
+        K3[Kafka Broker 3]
+        
+        DEB -- "4. 이벤트 발행" --> K1
+        DEB -- "4. 이벤트 발행" --> K2
+        DEB -- "4. 이벤트 발행" --> K3
     end
+
+    subgraph Analytics_Layer [OLAP: Real-time Analytics]
+        RL[StarRocks Routine Load]
+        FE[StarRocks FE Cluster]
+        BE[StarRocks BE Cluster]
+
+        K1 & K2 & K3 -- "5. Topic 소비" --> RL
+        RL -- "6. 파싱 및 분배" --> FE
+        FE -- "7. 저장 및 분석" --> BE
+    end
+
+    %% 블랙 테마를 위한 스타일 설정
+    style GEN fill:#1a237e,stroke:#5c6bc0,stroke-width:2px,color:#ffffff
+    style DB_ST fill:#01579b,stroke:#03a9f4,stroke-width:2px,color:#ffffff
+    style BIN fill:#1b5e20,stroke:#66bb6a,stroke-width:2px,color:#ffffff
+    style DEB fill:#4a148c,stroke:#ab47bc,stroke-width:2px,color:#ffffff
+    style K1 fill:#311b92,stroke:#7e57c2,stroke-width:2px,color:#ffffff
+    style K2 fill:#311b92,stroke:#7e57c2,stroke-width:2px,color:#ffffff
+    style K3 fill:#311b92,stroke:#7e57c2,stroke-width:2px,color:#ffffff
+    style RL fill:#b71c1c,stroke:#ef5350,stroke-width:2px,color:#ffffff
+    style FE fill:#e65100,stroke:#ffa726,stroke-width:2px,color:#ffffff
+    style BE fill:#e65100,stroke:#ffa726,stroke-width:2px,color:#ffffff
 ```
 
-### 🛠️ 기술 스택 및 버전
-
-| Component | Version | Description |
-| :--- | :--- | :--- |
-| **StarRocks** | 4.x | FE(3) + BE(3) MPP Architecture |
-| **Apache Kafka** | 7.6.1 | KRaft Mode (No Zookeeper), 3 Brokers |
-| **Debezium** | 2.4 | Kafka Connect 기반 CDC (JSON Converter) |
-| **MariaDB** | 10.6 | Source OLTP Database |
-| **Python** | 3.9+ | Fake Data Generator |
-| **Docker** | Compose | Container Orchestration (Static IP) |
-
 ---
 
-## ⚠️ 사전 요구 사항 (Prerequisites)
+### 3. 배포 및 실행 가이드 (Deployment)
 
-이 프로젝트는 고성능 데이터베이스와 메시지 큐를 다수 구동하므로 호스트 머신의 커널 설정 변경이 필수적입니다.
+반드시 아래 순서대로 실행하여 의존성을 확보하십시오.
 
-**1. 가상 메모리 설정 (필수)**
-StarRocks BE와 Kafka의 정상 작동을 위해 호스트의 `vm.max_map_count`를 늘려야 합니다.
-
+#### **Step 1. 인프라 네트워크 생성**
 ```bash
-# Linux / macOS (Intel) / WSL2
-sudo sysctl -w vm.max_map_count=262144
-```
-
-**2. 하드웨어 리소스 권장 사양**
-총 10개 이상의 컨테이너(Java 기반 다수)가 구동되므로 아래 사양을 권장합니다.
-* **RAM**: 16GB 이상
-* **CPU**: 6 vCPU 이상
-
----
-
-## 🗺️ 클러스터 명세 (Cluster Map)
-
-모든 컨테이너는 `dataplatform-net` (`10.100.0.0/16`) 네트워크 내에서 고정 IP를 가집니다.
-
-| Role | Service Name | IP Address | Port (Internal/External) |
-| :--- | :--- | :--- | :--- |
-| **Kafka** | kafka-1 | 10.100.0.41 | 9092, 29092 |
-| | kafka-2 | 10.100.0.42 | 9093, 29092 |
-| | kafka-3 | 10.100.0.43 | 9094, 29092 |
-| | kafka-ui | 10.100.0.44 | 8080 (Web) |
-| **StarRocks** | starrocks-fe-0 (Leader) | 10.100.0.21 | 9030 (Query), 8030 (Web) |
-| | starrocks-fe-1 | 10.100.0.22 | - |
-| | starrocks-fe-2 | 10.100.0.23 | - |
-| | starrocks-be-0 | 10.100.0.31 | 9050 (Heartbeat), 8040 (Web) |
-| | starrocks-be-1 | 10.100.0.32 | - |
-| | starrocks-be-2 | 10.100.0.33 | - |
-| **Source** | mariadb-source | (Auto) | 3306 |
-| **CDC** | debezium-connector | (Auto) | 8083 |
-
----
-
-## 🚀 실행 가이드 (Quick Start)
-
-의존성 문제 방지를 위해 반드시 아래 순서대로 실행해 주세요.
-
-### Step 1. 네트워크 생성
-고정 IP 할당을 위한 서브넷이 지정된 네트워크를 생성합니다.
-
-```bash
-sh create_network.sh
+./create_network.sh
 # 또는 직접 실행: docker network create --driver bridge --subnet=10.100.0.0/16 dataplatform-net
 ```
 
-### Step 2. Kafka 클러스터 구동
-메시지 브로커를 가장 먼저 실행합니다. (KRaft 모드)
-
+#### **Step 2. 메시지 브로커 (Kafka) 실행**
 ```bash
-cd kafka
-docker-compose up -d
-
-# 3개의 브로커가 모두 Healthy 상태가 될 때까지 약 30초 대기
+cd kafka && docker-compose up -d && cd ..
 ```
-> **확인**: 브라우저에서 `http://localhost:8080` (Kafka UI) 접속하여 클러스터 상태 확인.
 
-### Step 3. MariaDB & Debezium 구동
-
+#### **Step 3. 소스 데이터베이스 (MariaDB) 실행**
 ```bash
-cd ../mariadb
-docker-compose up -d
-
-cd ../debezium
-docker-compose up -d
+cd mariadb && docker-compose up -d && cd ..
 ```
 
-### Step 4. StarRocks 클러스터 구동
-FE(Frontend)를 먼저 띄우고 BE(Backend)를 실행합니다.
-
-**FE 실행:**
+#### **Step 4. CDC 엔진 (Debezium) 실행 및 커넥터 등록**
 ```bash
-cd ../starrocks/fe
-docker-compose up -d
+cd devezium && docker-compose up -d
+# 잠시 후 커넥터 등록 (REST API 호출)
+./register_connector.sh
+cd ..
 ```
 
-**BE 실행:**
+#### **Step 5. 분석 엔진 (StarRocks) 실행**
 ```bash
-cd ../be
-docker-compose up -d
-```
-
-### Step 5. StarRocks 클러스터 구성 (Backend 추가)
-Docker 실행 직후에는 FE가 BE를 인식하지 못할 수 있습니다. FE Leader에 접속하여 BE 노드들을 클러스터에 등록합니다.
-
-**MySQL 클라이언트로 FE 접속:**
-```bash
-mysql -h 127.0.0.1 -P 9030 -u root
-```
-
-**BE 노드 추가 쿼리 실행:**
-```sql
-ALTER SYSTEM ADD BACKEND "10.100.0.31:9050";
-ALTER SYSTEM ADD BACKEND "10.100.0.32:9050";
-ALTER SYSTEM ADD BACKEND "10.100.0.33:9050";
-
--- 상태 확인 (Alive가 true여야 함)
-SHOW BACKENDS;
-```
-
-### Step 6. 파이프라인 연결 (Connector & Routine Load)
-
-**1. Debezium Connector 등록**
-API를 호출하여 MariaDB를 바라보는 커넥터를 생성합니다.
-
-```bash
-cd ../../debezium
-sh register_connector.sh
-```
-
-**2. StarRocks 테이블 및 Routine Load 생성**
-StarRocks FE(MySQL Client)에서 아래 쿼리를 실행합니다.
-
-```sql
--- DB 생성
-CREATE DATABASE IF NOT EXISTS demo_db;
-USE demo_db;
-
--- 1. 테이블 생성 (분석용 스키마)
-CREATE TABLE events (
-    id BIGINT,
-    event_type STRING,
-    created_at DATETIME
-) ENGINE=OLAP
-PRIMARY KEY(id)
-DISTRIBUTED BY HASH(id) BUCKETS 3
-PROPERTIES("replication_num" = "3");
-
--- 2. Routine Load 생성 (Kafka -> StarRocks)
-CREATE ROUTINE LOAD event_load ON events
-COLUMNS(id, event_type, created_at)
-PROPERTIES
-(
-    "format" = "json",
-    "jsonpaths" = "[\"$.id\", \"$.event_type\", \"$.created_at\"]"
-)
-FROM KAFKA
-(
-    "kafka_broker_list" = "10.100.0.41:9092,10.100.0.42:9092,10.100.0.43:9092",
-    "kafka_topic" = "mariadb.demo_db.events",
-    "property.group.id" = "starrocks_consumers"
-);
-```
-
-### Step 7. 데이터 생성 (테스트)
-Python 스크립트로 MariaDB에 데이터를 넣으면 파이프라인 전체가 작동합니다.
-
-```bash
-cd mariadb
-# 가상환경이 있다면 source venv/bin/activate
-python gen_data.py
+# FE 먼저 실행 후 BE 실행
+cd starrocks/fe && docker-compose up -d && cd ../..
+cd starrocks/be && docker-compose up -d && cd ../..
 ```
 
 ---
 
-## 📊 모니터링 및 문제 해결
+### 4. 트래픽 생성 및 실시간 데이터 확인
 
-* **데이터가 적재되지 않을 때:**
-    * StarRocks에서 `SHOW ROUTINE LOAD TASK WHERE JobName = 'event_load';` 명령어로 에러 로그(`ErrorMsg`)를 확인하세요.
-    * Kafka Topic에 데이터가 들어오는지 Kafka UI(`localhost:8080`)에서 확인하세요.
-* **BE 노드가 죽을 때:**
-    * `docker logs starrocks-be-0` 확인. Memory Limit Exceeded 관련 로그가 있다면 호스트의 메모리를 늘리거나 `vm.max_map_count` 설정을 다시 확인하세요.
-* **Apple Silicon (M1/M2) 사용자:**
-    * StarRocks BE 이미지는 AVX2 명령어를 사용하므로, ARM 아키텍처에서는 실행이 실패하거나 매우 느릴 수 있습니다 (Rosetta 2 필요 혹은 ARM 호환 이미지 사용 권장).
+#### **데이터 생성기 실행**
+Python 가상환경을 활성화하고 MariaDB에 무작위 트래픽을 발생시킵니다.
+```bash
+cd mariadb
+source venv/bin/activate
+python gen_data.py
+```
+* `[USER] Created`: 신규 유저 발생
+* `[ORDER] New Order!`: 주문 데이터 발생
+* `[UPDATE] Order status changed`: 배송 상태 동기화 테스트 가능
+* `[DELETE] Order was cancelled`: StarRocks에서의 Primary Key 기반 삭제 연산 테스트 가능
 
-## 📝 주요 설정 노트
+#### **StarRocks 실시간 쿼리**
+StarRocks에 접속하여 MariaDB의 데이터가 실시간으로 반영되는지 확인합니다.
+```sql
+-- 주문 상태별 실시간 통계
+SELECT 
+    status, 
+    COUNT(*) as cnt, 
+    SUM(total_price) as revenue 
+FROM demo_db.orders 
+GROUP BY status;
 
-* **Debezium 설정**: `CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE=false`로 설정되어 있어 Kafka 메시지는 스키마 없는 순수 JSON 형태로 전송됩니다. 이는 Routine Load 시 JSON Path 파싱을 용이하게 합니다.
-* **로그 관리**: 각 컨테이너는 `json-file` 드라이버를 사용하며 `max-size: 200m`로 설정되어 있어 디스크 과점유를 방지합니다.
+-- 최근 취소된 주문이 StarRocks에서도 삭제되었는지 확인
+SELECT * FROM demo_db.orders ORDER BY id DESC LIMIT 10;
+```
+
+---
+
+### 💡 주요 실험 포인트
+* **Data Integrity**: MariaDB에서 `UPDATE`나 `DELETE`가 발생했을 때 StarRocks의 데이터가 즉시 일치하는지 확인.
+* **High Availability**: Kafka 브로커 하나를 중단(`docker-compose stop`) 시켰을 때 파이프라인 지속 여부.
+* **Routine Load**: StarRocks의 Routine Load 설정을 통한 Kafka 토픽 소비 효율 최적화.
+
+---
+📝 **License**: MIT License
