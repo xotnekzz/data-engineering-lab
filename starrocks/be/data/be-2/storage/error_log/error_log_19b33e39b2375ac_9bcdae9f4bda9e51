@@ -1,2 +1,0 @@
-Error: Not found: unable to find key: $.after
-be/src/exec/json_parser.cpp:272 JsonFunctions::extract_from_object(*row, _root_paths, &val). Row: {"before":{"id":2,"user_id":1,"product_id":3,"quantity":4,"total [meta: kafka partition: 0, offset: 6]

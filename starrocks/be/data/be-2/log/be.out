@@ -1,8 +1,0 @@
-start time: Thu Dec 18 23:49:03 KST 2025, server uptime:  23:49:03 up  1:40,  0 users,  load average: 2.41, 1.09, 1.84
-Run with JEMALLOC_CONF: 'percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000,metadata_thp:auto,background_thread:true,prof:true,prof_active:false'
-start time: Thu Dec 18 23:49:37 KST 2025, server uptime:  23:49:37 up 0 min,  0 users,  load average: 0.31, 0.07, 0.02
-Run with JEMALLOC_CONF: 'percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000,metadata_thp:auto,background_thread:true,prof:true,prof_active:false'
-start time: Fri Dec 19 00:17:45 KST 2025, server uptime:  00:17:45 up 0 min,  0 users,  load average: 2.87, 0.70, 0.23
-Run with JEMALLOC_CONF: 'percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000,metadata_thp:auto,background_thread:true,prof:true,prof_active:false'
-start time: Fri Dec 19 00:20:58 KST 2025, server uptime:  00:20:58 up 1 min,  0 users,  load average: 2.85, 0.96, 0.34
-Run with JEMALLOC_CONF: 'percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:5000,dirty_decay_ms:5000,metadata_thp:auto,background_thread:true,prof:true,prof_active:false'
